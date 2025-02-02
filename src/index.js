@@ -72,7 +72,7 @@ client.on('messageCreate', async message => {
     const commandName = args.shift().toLowerCase();
 
     // Load whitelist command
-    const whitelistCommand = require('./commands/whitelist.js');
+    const whitelistCommand = require('./features/whitelist.js');
     
     if (commandName === 'whitelist') {
         try {
@@ -85,7 +85,7 @@ client.on('messageCreate', async message => {
 });
 
 client.on('interactionCreate', async interaction => {
-    const whitelistCommand = require('./commands/whitelist.js');
+    const whitelistCommand = require('./features/whitelist.js');
 
     try {
         if (interaction.isButton() && interaction.customId === 'whitelist_button') {

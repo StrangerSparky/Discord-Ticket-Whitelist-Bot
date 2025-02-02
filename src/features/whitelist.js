@@ -1,290 +1,188 @@
 const { 
-    ActionRowBuilder, 
+    EmbedBuilder, 
     ButtonBuilder, 
-    ButtonStyle,
-    StringSelectMenuBuilder,
-    EmbedBuilder,
-    PermissionFlagsBits
+    ButtonStyle, 
+    ActionRowBuilder,
+    PermissionFlagsBits,
+    StringSelectMenuBuilder
 } = require('discord.js');
-const config = require('../../config');  // Import the config
 
-// Store cooldowns and user progress in Maps for efficient access
-const cooldowns = new Map();
+const questions = [
+    {
+        text: "📜 **Do You Have Read All The Rules?**",
+        options: [
+            { label: "❌ No", value: "wrong1" },
+            { label: "✅ Yes", value: "correct1" }
+        ],
+        correct: "correct1"
+    },
+    {
+        text: "🚫 **Is Vulgar Language Allowed In The Server?**",
+        options: [
+            { label: "❌ No", description: "Treat everyone with respect", value: "correct2" },
+            { label: "💬 Yes", description: "Uses vulgar language", value: "wrong2" }
+        ],
+        correct: "correct2"
+    },
+    {
+        text: "👊 **If Someone Calls You Vulgar Words, What Should You Do?**",
+        options: [
+            { label: "📷 Record POV/Contact Admin", description: "Contact Admin", value: "correct3" },
+            { label: "🗣️ Start Arguing", description: "Respond back with vulgar language", value: "wrong3" }
+        ],
+        correct: "correct3"
+    }
+];
+
 const userProgress = new Map();
 
-module.exports = (client) => {
-
-    // Interaction handler
-    client.on('interactionCreate', async (interaction) => {
-        if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
-
-        const userId = interaction.user.id;
+module.exports = {
+    name: '!whitelist',
+    questions,
+    async execute(message) {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return message.reply('❌ You do not have permission to use this command.');
+        }
 
         try {
-            // Cooldown check
-            if (await handleCooldown(interaction, userId)) return;
-
-            // Handle button click
-            if (interaction.isButton() && interaction.customId === 'whitelist_button') {
-                await handleButtonClick(interaction, userId);
-                return;
-            }
-
-            // Handle select menu interaction (answers to questions)
-            if (interaction.isStringSelectMenu()) {
-                await handleSelectMenu(interaction, userId);
-            }
-        } catch (error) {
-            console.error('Error in interaction handler:', error);
-            await handleError(interaction);
-        }
-    });
-};
-
-// Helper functions
-
-async function handleCooldown(interaction, userId) {
-    if (cooldowns.has(userId)) {
-        const cooldownEnd = cooldowns.get(userId);
-        if (Date.now() < cooldownEnd) {
-            const timeLeft = Math.ceil((cooldownEnd - Date.now()) / 1000);
-            await interaction.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#FF0000')
-                        .setTitle('⏳ Cooldown Active')
-                        .setDescription(`Please wait **${timeLeft} seconds** before trying again.`)
-                        .setFooter({ text: 'This helps prevent spam and abuse' })
-                ],
-                flags: 64
-            });
-            return true;
-        }
-    }
-    return false;
-}
-
-async function handleButtonClick(interaction, userId) {
-    // Initialize user progress
-    if (!userProgress.has(userId)) {
-        userProgress.set(userId, { currentQuestion: 1, answers: [] });
-    }
-
-    // Send the first question
-    await interaction.reply({
-        embeds: [createQuestionEmbed(1)],
-        components: [createQuestionMenu(1)],
-        flags: 64
-    });
-}
-
-async function handleSelectMenu(interaction, userId) {
-    let progress = userProgress.get(userId);
-
-    // If progress is not found, reinitialize it
-    if (!progress) {
-        console.log(`Progress not found for user ${userId}, initializing.`);
-        progress = { currentQuestion: 1, answers: [] };
-        userProgress.set(userId, progress);
-    }
-
-    const questionNumber = parseInt(interaction.customId.split('_')[1]);
-    const selectedAnswer = interaction.values[0];
-
-    // Check if the question number is valid
-    if (questionNumber < 1 || questionNumber > config.WHITELIST.QUESTIONS.length) {
-        console.error(`Invalid question number: ${questionNumber}`);
-        await interaction.reply({ content: '❌ Invalid question number.', flags: 64 });
-        return;
-    }
-
-    const question = config.WHITELIST.QUESTIONS[questionNumber - 1];  // Access questions from config
-
-    // Add the selected answer to the user's progress
-    progress.answers.push(selectedAnswer);
-
-    console.log(`User ${userId} answered question ${questionNumber}:`, selectedAnswer);
-
-    // Check if all answers are selected and move to the next question if necessary
-    if (questionNumber === 1) {
-        progress.currentQuestion = 2;
-        await interaction.update({
-            embeds: [createQuestionEmbed(2)],
-            components: [createQuestionMenu(2)],
-            flags: 64
-        });
-    } else if (questionNumber === 2) {
-        progress.currentQuestion = 3;
-        await interaction.update({
-            embeds: [createQuestionEmbed(3)],
-            components: [createQuestionMenu(3)],
-            flags: 64
-        });
-    } else if (questionNumber === 3) {
-        // Once all questions are answered, check the answers
-        await checkAllAnswers(interaction, userId);
-    }
-}
-
-async function checkAllAnswers(interaction, userId) {
-    const progress = userProgress.get(userId);
-
-    // If progress is not found, log and stop
-    if (!progress) {
-        console.error('User progress not found');
-        return;
-    }
-
-    const allAnswers = progress.answers;
-
-    console.log(`Checking answers for user ${userId}:`, allAnswers);
-
-    // Check if all answers are correct
-    if (allAnswers.length < config.WHITELIST.QUESTIONS.length) {
-        console.error('Not all questions have been answered.');
-        await interaction.reply({ content: '❌ Please answer all questions before submitting.', flags: 64 });
-        return;
-    }
-
-    if (allAnswers[0] === config.WHITELIST.QUESTIONS[0].correct &&
-        allAnswers[1] === config.WHITELIST.QUESTIONS[1].correct &&
-        allAnswers[2] === config.WHITELIST.QUESTIONS[2].correct) {
-        
-        // All answers are correct, grant whitelist
-        await handleCorrectWhitelist(interaction);
-    } else {
-        // One or more answers are incorrect, notify the user
-        await handleWrongAnswer(interaction, userId);
-    }
-}
-
-async function handleCorrectWhitelist(interaction) {
-    try {
-        const member = interaction.member;
-        const whitelistRole = interaction.guild.roles.cache.get(config.WHITELIST.ROLE_ID);  // Use role ID from config
-
-        if (!whitelistRole) {
-            throw new Error('Whitelist role not found');
-        }
-
-        // Assign the whitelist role to the user
-        await member.roles.add(whitelistRole);
-
-        // Send congratulations DM to the user
-        await sendCongratulationsDM(interaction);
-
-        // Send success message to the interaction channel
-        await interaction.update({
-            embeds: [
-                new EmbedBuilder()
-                    .setColor('#00ff00')
-                    .setTitle('✅ Application Successful')
-                    .setDescription('You have been successfully whitelisted! Check your DMs for more information.')
-                    .setTimestamp()
-            ],
-            components: [],
-            flags: 64
-        });
-
-    } catch (error) {
-        console.error('Error in whitelist process:', error);
-        await handleError(interaction);
-    }
-}
-
-async function sendCongratulationsDM(interaction) {
-    const successEmbed = new EmbedBuilder()
-        .setTitle('🎉 Congratulations!')
-        .setDescription('You have successfully completed the whitelist application!')
-        .setColor('#00ff00')
-        .addFields(
-            { name: '✅ Status', value: 'Whitelisted', inline: true },
-            { name: '🏷️ Role', value: 'Added', inline: true },
-            { name: '📅 Date', value: new Date().toLocaleDateString(), inline: true }
-        )
-        .setImage("https://i.ibb.co/q8QqGGd/promo.gif")
-        .setTimestamp()
-        .setFooter({ text: "Powerd By DBR" });
-
-    await interaction.user.send({ embeds: [successEmbed] });
-}
-
-async function handleWrongAnswer(interaction, userId) {
-    userProgress.delete(userId); // Remove the user's progress
-    cooldowns.set(userId, Date.now() + config.WHITELIST.COOLDOWN * 1000); // Use the cooldown value from config
-    await interaction.update({
-        embeds: [
-            new EmbedBuilder()
-                .setColor('#FF0000')
-                .setTitle('❌ Incorrect Answer')
-                .setDescription('Your answer was incorrect. Please try again after the cooldown period.')
-                .addFields({ name: 'Cooldown', value: `⏳ ${config.WHITELIST.COOLDOWN} seconds`, inline: true })
-                .setTimestamp()
-        ],
-        components: [],
-        flags: 64
-    });
-}
-
-async function handleError(interaction) {
-    const errorEmbed = new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setTitle('❌ Error')
-        .setDescription('An error occurred while processing your request. Please contact an administrator.')
-        .setTimestamp();
-
-    if (interaction.replied || interaction.deferred) {
-        await interaction.editReply({ embeds: [errorEmbed], components: [], flags: 64 });
-    } else {
-        await interaction.reply({ embeds: [errorEmbed], flags: 64 });
-    }
-}
-
-function createWhitelistButton(channel) {
-    const button = new ButtonBuilder()
-        .setCustomId('whitelist_button')
-        .setLabel('Apply for Whitelist')
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('📝');
-
-    const row = new ActionRowBuilder().addComponents(button);
-
-    return channel.send({
-        embeds: [
-            new EmbedBuilder()
+            await message.delete();
+            const whitelistEmbed = new EmbedBuilder()
                 .setTitle('🔒 Whitelist Application')
-                .setImage("https://i.ibb.co/TBpgPSZ9/background.png")
-                .setDescription('Welcome to our whitelist application process! Click the button below to begin.\n\n' +
+                .setDescription('Welcome to our whitelist application process!\nClick the button below to begin.\n\n' +
                               '**Requirements:**\n' +
                               '• Answer all questions correctly\n' +
                               '• Follow server rules\n' +
                               '• Be patient during the process')
-                .setColor(config.WHITELIST.COLOR)
+                .setColor(0xF228FE)
+                .setImage("https://i.ibb.co/TBpgPSZ/background.png")
                 .setTimestamp()
-                .setFooter({ text: 'Powered by DBR' })
-        ],
-        components: [row]
-    });
-}
+                .setFooter({ text: 'Powered by DBR' });
 
-function createQuestionEmbed(questionNumber) {
-    const question = config.WHITELIST.QUESTIONS[questionNumber - 1];  // Access questions from config
-    return new EmbedBuilder()
-        .setTitle(`Question ${questionNumber} of ${config.WHITELIST.QUESTIONS.length}`)
+            const whitelistButton = new ButtonBuilder()
+                .setCustomId('whitelist_button')
+                .setLabel('Apply for Whitelist')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('📝');
+
+            const row = new ActionRowBuilder()
+                .addComponents(whitelistButton);
+
+            await message.channel.send({
+                embeds: [whitelistEmbed],
+                components: [row]
+            });
+        } catch (error) {
+            console.error('Error setting up whitelist:', error);
+            await message.channel.send('❌ Failed to set up the whitelist system.');
+        }
+    },
+
+    async handleButton(interaction) {
+        try {
+            userProgress.set(interaction.user.id, { questionIndex: 0, correctAnswers: 0 });
+            await sendQuestion(interaction, 0);
+        } catch (error) {
+            console.error('Error handling whitelist button:', error);
+            await interaction.reply({ content: '❌ An error occurred', flags: 64 });
+        }
+    },
+
+    async handleSelectMenu(interaction) {
+        const progress = userProgress.get(interaction.user.id);
+        if (!progress) return;
+
+        const currentQuestion = questions[progress.questionIndex];
+        const selectedAnswer = interaction.values[0];
+
+        if (selectedAnswer === currentQuestion.correct) {
+            progress.correctAnswers++;
+        }
+
+        progress.questionIndex++;
+
+        if (progress.questionIndex < questions.length) {
+            await sendQuestion(interaction, progress.questionIndex);
+        } else {
+            await handleCompletion(interaction, progress.correctAnswers);
+            userProgress.delete(interaction.user.id);
+        }
+    }
+};
+
+async function sendQuestion(interaction, index) {
+    const question = questions[index];
+    
+    const embed = new EmbedBuilder()
+        .setTitle('Whitelist Question')
         .setDescription(question.text)
-        .setColor(config.WHITELIST.COLOR)  // Use color from config
-        .setFooter({ 
-            text: `Progress: ${questionNumber}/${config.WHITELIST.QUESTIONS.length} • Choose carefully!` 
-        })
-        .setTimestamp();
+        .setColor(0xF228FE)
+        .setFooter({ text: `Question ${index + 1}/${questions.length}` });
+
+    const select = new StringSelectMenuBuilder()
+        .setCustomId(`whitelist_answer_${index}`)
+        .setPlaceholder('Select your answer')
+        .addOptions(question.options);
+
+    const row = new ActionRowBuilder().addComponents(select);
+
+    if (index === 0) {
+        await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+    } else {
+        await interaction.update({ embeds: [embed], components: [row] });
+    }
 }
 
-function createQuestionMenu(questionNumber) {
-    const question = config.WHITELIST.QUESTIONS[questionNumber - 1];  // Access questions from config
-    return new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId(`question_${questionNumber}`)
-            .setPlaceholder('Select your answer')
-            .addOptions(question.options)
-    );
-}
+async function handleCompletion(interaction, correctAnswers) {
+    const passed = correctAnswers === questions.length;
+    const roleId = process.env.WHITELIST_ROLE_ID;
+
+    const embed = new EmbedBuilder()
+        .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
+        .setDescription(passed ? 
+            'Congratulations! You have been whitelisted.' : 
+            `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
+        .setColor(passed ? 0x00FF00 : 0xFF0000);
+
+    if (passed && roleId) {
+        try {
+            const role = interaction.guild.roles.cache.get(roleId);
+            if (!role) {
+                console.error('Whitelist role not found');
+                return;
+            }
+
+            await interaction.member.roles.add(role);
+
+            const dmEmbed = new EmbedBuilder()
+                .setTitle('🎉 Whitelist Application Successful!')
+                .setDescription([
+                    `Congratulations ${interaction.user.toString()}!`,
+                    '',
+                    '**You have successfully completed the whitelist application!**',
+                    'You now have access to the whitelisted sections of our server.',
+                    '',
+                    '**Next Steps:**',
+                    '• Check out the whitelisted channels',
+                    '• Read any additional rules or guidelines',
+                    '• Enjoy your new access!'
+                ].join('\n'))
+                .setColor(0x00FF00)
+                .setTimestamp()
+                .setFooter({ text: 'Powered by DBR' });
+
+            try {
+                await interaction.user.send({ embeds: [dmEmbed] });
+            } catch (error) {
+                console.error('Could not send DM to user:', error);
+                embed.setFooter({ text: 'Note: Unable to send you a DM. Please check your privacy settings.' });
+            }
+
+            console.log(`Added whitelist role to ${interaction.user.tag}`);
+        } catch (error) {
+            console.error('Error adding role or sending DM:', error);
+            embed.setDescription('⚠️ Passed but there was an error assigning the role. Please contact an administrator.');
+        }
+    }
+
+    await interaction.update({ embeds: [embed], components: [] });
+} 
