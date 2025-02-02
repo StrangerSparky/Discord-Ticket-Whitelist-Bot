@@ -90,6 +90,14 @@ async function handleSelectMenu(interaction, userId) {
 
     const questionNumber = parseInt(interaction.customId.split('_')[1]);
     const selectedAnswer = interaction.values[0];
+
+    // Check if the question number is valid
+    if (questionNumber < 1 || questionNumber > config.WHITELIST.QUESTIONS.length) {
+        console.error(`Invalid question number: ${questionNumber}`);
+        await interaction.reply({ content: '❌ Invalid question number.', flags: 64 });
+        return;
+    }
+
     const question = config.WHITELIST.QUESTIONS[questionNumber - 1];  // Access questions from config
 
     // Add the selected answer to the user's progress
@@ -132,6 +140,12 @@ async function checkAllAnswers(interaction, userId) {
     console.log(`Checking answers for user ${userId}:`, allAnswers);
 
     // Check if all answers are correct
+    if (allAnswers.length < config.WHITELIST.QUESTIONS.length) {
+        console.error('Not all questions have been answered.');
+        await interaction.reply({ content: '❌ Please answer all questions before submitting.', flags: 64 });
+        return;
+    }
+
     if (allAnswers[0] === config.WHITELIST.QUESTIONS[0].correct &&
         allAnswers[1] === config.WHITELIST.QUESTIONS[1].correct &&
         allAnswers[2] === config.WHITELIST.QUESTIONS[2].correct) {

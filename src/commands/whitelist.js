@@ -83,7 +83,7 @@ module.exports = {
             await sendQuestion(interaction, 0);
         } catch (error) {
             console.error('Error handling whitelist button:', error);
-            await interaction.reply({ content: '❌ An error occurred', ephemeral: true });
+            await interaction.reply({ content: '❌ An error occurred', flags: 64 });
         }
     },
 
@@ -126,7 +126,7 @@ async function sendQuestion(interaction, index) {
     const row = new ActionRowBuilder().addComponents(select);
 
     if (index === 0) {
-        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
     } else {
         await interaction.update({ embeds: [embed], components: [row] });
     }

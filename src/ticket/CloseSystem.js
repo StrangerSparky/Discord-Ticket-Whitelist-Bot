@@ -22,7 +22,7 @@ module.exports = {
         if (!hasPermission) {
             return interaction.reply({
                 content: "❌ You don't have permission to close tickets.",
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -44,7 +44,7 @@ module.exports = {
         } catch (error) {
             await interaction.reply({
                 content: "❌ Failed to show close reason form",
-                ephemeral: true,
+                flags: 64,
             });
         }
     },

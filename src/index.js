@@ -9,6 +9,20 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMessageTyping,
+        GatewayIntentBits.GuildExpressions ,
+        GatewayIntentBits.GuildIntegrations,
+        GatewayIntentBits.GuildWebhooks,
+        GatewayIntentBits.GuildInvites,
+        GatewayIntentBits.GuildScheduledEvents,
+        GatewayIntentBits.AutoModerationConfiguration,
+        GatewayIntentBits.AutoModerationExecution,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageReactions,
+        GatewayIntentBits.DirectMessageTyping,
+        GatewayIntentBits.MessageContent
     ]
 });
 
@@ -87,7 +101,9 @@ client.on('interactionCreate', async interaction => {
 });
 
 const welcome = require('./features/welcome');
+const setupVCPing = require('./features/vcping');
 
 welcome(client);
+setupVCPing(client);
 
 client.login(process.env.TOKEN); 

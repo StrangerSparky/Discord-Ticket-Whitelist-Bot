@@ -1,11 +1,12 @@
 const { EmbedBuilder } = require('discord.js');
 const COLORS = require('../utils/colors'); // Import COLORS from colors.js
+require('dotenv').config();
 
 function setupVCPing(client) {
     const userJoinTimes = new Map();
     const messageCache = new Map(); // Store the message ID for each user
     const logChannelId = process.env.VC_LOG_CHANNEL;
-    const targetVCId = process.env.TARGET_VC_ID;  // Add this variable to define the VC you want to track
+    const targetVCId = process.env.TARGET_VC_ID;  // Define the VC you want to track
 
     if (!logChannelId || !targetVCId) {
         console.error('❌ VC_LOG_CHANNEL or TARGET_VC_ID environment variable is not set!');
@@ -13,6 +14,10 @@ function setupVCPing(client) {
     }
 
     client.on('voiceStateUpdate', async (oldState, newState) => {
+        console.log(`Voice state updated for user: ${newState.member.user.tag}`);
+        console.log(`Old channel: ${oldState.channel ? oldState.channel.name : 'None'}`);
+        console.log(`New channel: ${newState.channel ? newState.channel.name : 'None'}`);
+
         try {
             const logChannel = client.channels.cache.get(logChannelId);
             if (!logChannel) {
@@ -34,14 +39,14 @@ function setupVCPing(client) {
 
                 const embed = new EmbedBuilder()
                     .setColor(COLORS.green)
-                    .setTitle('Voice Channel Activity')
+                    .setTitle('🎤 Voice Channel Activity')
                     .setDescription(`**${member.user.displayName}** joined **${newState.channel.name}** at ${time}`)
                     .setTimestamp()
                     .setFooter({ text: 'Powered by DBR' });
 
                 // Send the embed and store the message ID in the cache
                 const joinMessage = await logChannel.send({ embeds: [embed] });
-                messageCache.set(member.id, joinMessage.id);  // Save the message ID
+                messageCache.set(member.id, joinMessage.id); // Store the message ID
             }
 
             // User moved from one channel to another (including the target VC)
@@ -56,8 +61,8 @@ function setupVCPing(client) {
 
                     const embed = new EmbedBuilder()
                         .setColor(COLORS.red)
-                        .setTitle('Voice Channel Activity')
-                        .setDescription(`**${member.user.displayName}** left from **${oldState.channel.name}** at ${time} (Duration: ${sessionDuration})`)
+                        .setTitle('🔄 Voice Channel Activity')
+                        .setDescription(`**${member.user.displayName}** left **${oldState.channel.name}** at ${time} (Duration: ${sessionDuration})`)
                         .setTimestamp()
                         .setFooter({ text: 'Powered by DBR' });
 
@@ -67,8 +72,8 @@ function setupVCPing(client) {
                 } else {
                     const embed = new EmbedBuilder()
                         .setColor(COLORS.red)
-                        .setTitle('Voice Channel Activity')
-                        .setDescription(`**${member.user.displayName}** left from **${oldState.channel.name}** at ${time}`)
+                        .setTitle('🔄 Voice Channel Activity')
+                        .setDescription(`**${member.user.displayName}** left **${oldState.channel.name}** at ${time}`)
                         .setTimestamp()
                         .setFooter({ text: 'Powered by DBR' });
 
@@ -93,8 +98,8 @@ function setupVCPing(client) {
 
                     const embed = new EmbedBuilder()
                         .setColor(COLORS.red)
-                        .setTitle('Voice Channel Activity')
-                        .setDescription(`**${member.user.displayName}** left from **${oldState.channel.name}** at ${time} (Duration: ${sessionDuration})`)
+                        .setTitle('🔒 Voice Channel Activity')
+                        .setDescription(`**${member.user.displayName}** left **${oldState.channel.name}** at ${time} (Duration: ${sessionDuration})`)
                         .setTimestamp()
                         .setFooter({ text: 'Powered by DBR' });
 
@@ -104,8 +109,8 @@ function setupVCPing(client) {
                 } else {
                     const embed = new EmbedBuilder()
                         .setColor(COLORS.red)
-                        .setTitle('Voice Channel Activity')
-                        .setDescription(`**${member.user.displayName}** left from **${oldState.channel.name}** at ${time}`)
+                        .setTitle('🔒 Voice Channel Activity')
+                        .setDescription(`**${member.user.displayName}** left **${oldState.channel.name}** at ${time}`)
                         .setTimestamp()
                         .setFooter({ text: 'Powered by DBR' });
 
@@ -124,4 +129,4 @@ function setupVCPing(client) {
     });
 }
 
-module.exports = { setupVCPing };
+module.exports = setupVCPing;
