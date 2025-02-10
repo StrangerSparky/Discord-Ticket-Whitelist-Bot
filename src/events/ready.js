@@ -1,4 +1,5 @@
 const { EmbedBuilder, Colors, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+const {sendVerifyButton} = require('../features/verify');
 
 module.exports = {
     name: 'ready',
@@ -39,6 +40,7 @@ module.exports = {
                 .setDescription('> **Note: Please do not create tickets unnecessarily. Abuse of the ticket system may result in moderation action.**');
 
             await channel.send({ embeds: [warningEmbed] });
+            await sendVerifyButton(client);
 
             console.log('✅ Ticket system initialized');
         } catch (error) {

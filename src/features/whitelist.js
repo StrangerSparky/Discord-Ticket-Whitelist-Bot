@@ -4,8 +4,11 @@ const {
     ButtonStyle, 
     ActionRowBuilder,
     PermissionFlagsBits,
-    StringSelectMenuBuilder
+    StringSelectMenuBuilder,
 } = require('discord.js');
+const { saveUserDetails, getUserDetails, updateWhitelistStatus } = require('../database'); // Ensure this is imported
+const moment = require('moment');
+
 
 const questions = [
     {
@@ -136,15 +139,25 @@ async function handleCompletion(interaction, correctAnswers) {
     const passed = correctAnswers === questions.length;
     const roleId = process.env.WHITELIST_ROLE_ID;
 
-    const embed = new EmbedBuilder()
-        .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
-        .setDescription(passed ? 
-            'Congratulations! You have been whitelisted.' : 
-            `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
-        .setColor(passed ? 0x00FF00 : 0xFF0000);
+    try {
+        // Get user details from database
+        const userDetails = await getUserDetails(interaction.user.id);
+        if (!userDetails) {
+            console.error('User details not found in database');
+            return;
+        }
 
-    if (passed && roleId) {
-        try {
+        // Update whitelist status
+        await updateWhitelistStatus(interaction.user.id, passed ? 'approved' : 'rejected');
+
+        const embed = new EmbedBuilder()
+            .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
+            .setDescription(passed ? 
+                'Congratulations! You have been whitelisted.' : 
+                `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
+            .setColor(passed ? 0x00FF00 : 0xFF0000);
+
+        if (passed && roleId) {
             const role = interaction.guild.roles.cache.get(roleId);
             if (!role) {
                 console.error('Whitelist role not found');
@@ -153,6 +166,33 @@ async function handleCompletion(interaction, correctAnswers) {
 
             await interaction.member.roles.add(role);
 
+            // Log to channel
+            const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
+            if (logChannel) {
+                const logEmbed = new EmbedBuilder()
+                .setTitle('Whitelist Approved')
+                .setDescription([
+                  `**👤 User Information:**`,
+                  `**Username:** ${userDetails.username}`,
+                  `**Discord ID:** ${userDetails.id}`,
+                  `**Email:** ${userDetails.email || 'Not provided'}`,
+                  ``,
+                  `**✅ Verification Details:**`,
+                  `**Verified At:** ${moment(userDetails.verifiedAt).format('MMMM D, YYYY h:mm A')}`,
+                  `**Whitelist Status:** Approved`,
+                  ``,
+                  `✅ **Result:** User has been whitelisted`
+                ].join('\n'))
+                .setColor(0x00FF00)
+                .setTimestamp();
+              
+              if (userDetails.avatar) {
+                logEmbed.setThumbnail(`https://cdn.discordapp.com/avatars/${userDetails.id}/${userDetails.avatar}.png`);
+              }
+                await logChannel.send({ embeds: [logEmbed] });
+            }
+
+            // Send DM to user
             const dmEmbed = new EmbedBuilder()
                 .setTitle('🎉 Whitelist Application Successful!')
                 .setDescription([
@@ -176,13 +216,18 @@ async function handleCompletion(interaction, correctAnswers) {
                 console.error('Could not send DM to user:', error);
                 embed.setFooter({ text: 'Note: Unable to send you a DM. Please check your privacy settings.' });
             }
-
-            console.log(`Added whitelist role to ${interaction.user.tag}`);
-        } catch (error) {
-            console.error('Error adding role or sending DM:', error);
-            embed.setDescription('⚠️ Passed but there was an error assigning the role. Please contact an administrator.');
         }
-    }
 
-    await interaction.update({ embeds: [embed], components: [] });
+        await interaction.update({ embeds: [embed], components: [] });
+    } catch (error) {
+        console.error('Error in handleCompletion:', error);
+        await interaction.update({ 
+            embeds: [new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription('An error occurred while processing your whitelist application. Please contact an administrator.')
+                .setColor(0xFF0000)
+            ], 
+            components: [] 
+        });
+    }
 } 

@@ -1,87 +1,111 @@
-// File: src/handlers/ModalHandler.js
-const { EmbedBuilder } = require('discord.js');
-const COLORS = require('../utils/colors');  // Adjust the path according to your project structure
+const { EmbedBuilder, PermissionsBitField } = require('discord.js');
+const COLORS = require('../utils/colors');
 
-class ModalHandler {
-    static async handleSayModal(interaction) {
-        try {
-            // Extract channel ID from customId
-            const channelId = interaction.customId.split('-')[1];
-            const channel = interaction.guild.channels.cache.get(channelId);
 
-            if (!channel) {
-                return interaction.reply({
-                    content: 'The target channel no longer exists!',
-                    flags: 64
-                });
-            }
+const parseColor = (colorInput) => {
+    if (!colorInput) return null;
+    
+    const normalizedColor = colorInput.trim().toLowerCase();
+    return COLORS[normalizedColor] || 
+           (normalizedColor.startsWith('#') ? 
+            parseInt(normalizedColor.replace('#', ''), 16) : 
+            null);
+};
 
-            // Get values from modal
-            const title = interaction.fields.getTextInputValue('titleInput');
-            const content = interaction.fields.getTextInputValue('messageInput');
-            const imageUrl = interaction.fields.getTextInputValue('imageInput');
-            const colorInput = interaction.fields.getTextInputValue('colorInput').toLowerCase();
+async function handleSayModal(interaction) {
+    try {
+        // Validate modal structure
+        const parts = interaction.customId.split('-');
+        if (parts.length < 2) {
+            return interaction.reply({ 
+                content: '❌ Invalid modal submission.',
+                flags: 64 
+            });
+        }
 
-            // Create embed
-            const embed = new EmbedBuilder()
-                .setDescription(content)
-                .setTimestamp()
-                .setFooter({ text: 'Powered by DBR' });
+        const channelId = parts[1];
+        const channel = interaction.guild.channels.cache.get(channelId);
 
-            // Set title if provided
-            if (title) {
-                embed.setTitle(title);
-            }
+        // Validate channel existence
+        if (!channel) {
+            return interaction.reply({ 
+                content: '❌ The target channel no longer exists.',
+                flags: 64 
+            });
+        }
 
-            // Set color if provided
-            if (colorInput) {
-                const color = COLORS[colorInput] || parseInt(colorInput.replace('#', ''), 16) || null;
-                if (color) {
-                    embed.setColor(color);
-                }
-            }
-
-            // Set image if valid URL provided
-            if (imageUrl) {
-                try {
-                    new URL(imageUrl);
-                    embed.setImage(imageUrl);
-                } catch (error) {
-                    return interaction.reply({
-                        content: 'Invalid image URL provided!',
-                        flags: 64
-                    });
-                }
-            }
-
-            // Send the message
-            await channel.send({ embeds: [embed] });
-            
-            // Confirm to user
-            await interaction.reply({
-                content: `Message sent successfully to ${channel}!`,
+        // Check bot permissions
+        const botMember = interaction.guild.members.me;
+        if (!channel.permissionsFor(botMember).has(PermissionsBitField.Flags.SendMessages)) {
+            return interaction.reply({
+                content: '❌ I do not have permission to send messages in that channel!',
                 flags: 64
             });
+        }
 
-        } catch (error) {
-            console.error('Error handling say modal:', error);
+        // Defer reply to prevent timeout
+        await interaction.deferReply({ flags: 64 });
+
+        // Extract modal inputs
+        const title = interaction.fields.getTextInputValue('titleInput')?.trim() || null;
+        const content = interaction.fields.getTextInputValue('messageInput')?.trim();
+        const imageUrl = interaction.fields.getTextInputValue('imageInput')?.trim() || null;
+        const colorInput = interaction.fields.getTextInputValue('colorInput')?.trim() || null;
+
+        // Validate content
+        if (!content) {
+            return interaction.followUp({ 
+                content: '❌ Message content is required.',
+                flags: 64 
+            });
+        }
+
+        // Create embed
+        const embed = new EmbedBuilder()
+            .setDescription(content)
+            .setTimestamp()
+            .setFooter({ text: 'Powered by DBR' });
+
+        // Optional embed enhancements
+        if (title) embed.setTitle(title);
+
+        const embedColor = parseColor(colorInput);
+        if (embedColor) embed.setColor(embedColor);
+
+        // Validate and add image
+        if (imageUrl && !imageUrl.startsWith('http')) {
+            return interaction.followUp({ 
+                content: '❌ Invalid image URL provided!',
+                flags: 64 
+            });
+        }
+
+        if (imageUrl) embed.setImage(imageUrl);
+        // Send message
+        await channel.send({ embeds: [embed] });
+
+        // Confirm success
+        await interaction.followUp({
+            content: `✅ Message sent successfully to ${channel}!`,
+            flags: 64
+        });
+
+    } catch (error) {
+        console.error('[SAY MODAL] Processing error:', error);
+        
+        // Ensure a response is always sent
+        if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({
-                content: 'There was an error while sending your message.',
+                content: '❌ An unexpected error occurred while processing your modal.',
+                flags: 64
+            });
+        } else if (interaction.deferred) {
+            await interaction.followUp({
+                content: '❌ An unexpected error occurred while processing your modal.',
                 flags: 64
             });
         }
     }
 }
 
-module.exports = {
-    event: "interactionCreate",
-    async execute(interaction) {
-        if (!interaction.isModalSubmit()) return;
-
-        // Handle different modal types
-        if (interaction.customId.startsWith('sayModal-')) {
-            await ModalHandler.handleSayModal(interaction);
-        }
-        // Add more modal handlers here as needed
-    }
-};
+module.exports = { handleSayModal };

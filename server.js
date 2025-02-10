@@ -1,8 +1,18 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+
 const app = express();
-const port = 3000;
+const PORT = 3000;
+
+// Serve static files from the 'public' directory
+app.use(express.static('public'));
+
+// Route for the verification success page
+app.get('/verify', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'verify.html'));
+});
 
 // Serve static files from the 'transcripts' folder
 app.use('/transcripts', express.static(path.join(__dirname, 'transcripts')));
@@ -20,7 +30,7 @@ app.get('/view/:ticketId', (req, res) => {
     }
 });
 
-// Start the web server
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
