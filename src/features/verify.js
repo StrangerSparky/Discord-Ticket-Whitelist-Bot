@@ -83,7 +83,7 @@ async function handleVerifyButton(interaction) {
   }
 } 
 
-async function storeUserData(userData) {
+async function storeUserData(client, userData) {
   try {
     let db = {};
     if (fs.existsSync(DB_PATH)) {
@@ -104,6 +104,25 @@ async function storeUserData(userData) {
 
     db[userData.id] = userInfo;
     fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+
+    // Assign Member role after verification
+    const GUILD_ID = 'YOUR_GUILD_ID'; // Replace with your server's ID
+    const MEMBER_ROLE_ID = 'YOUR_ROLE_ID'; // Replace with the Member role ID
+
+    const guild = client.guilds.cache.get(GUILD_ID);
+    if (!guild) {
+      console.error('Guild not found.');
+      return;
+    }
+
+    const member = await guild.members.fetch(userData.id);
+    if (!member) {
+      console.error('Member not found.');
+      return;
+    }
+
+    await member.roles.add(MEMBER_ROLE_ID);
+    console.log(`✅ Assigned 'Member' role to ${userData.username}`);
 
     return userInfo;
   } catch (error) {

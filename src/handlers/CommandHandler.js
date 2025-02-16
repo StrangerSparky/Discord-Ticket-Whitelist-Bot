@@ -1,71 +1,155 @@
-// File: src/handlers/CommandHandler.js
-const { REST, Routes, Collection } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { saveUserDetails, getUserDetails, updateWhitelistStatus } = require('../database');
+const config = require('../../config');
+const moment = require('moment');
 
-class CommandHandler {
-    constructor(client) {
-        this.client = client;
-        this.client.commands = new Collection();
-        this.commandsArray = [];
-    }
+const questions = config.WHITELIST.QUESTIONS;
+const userProgress = new Map();
 
-    async loadCommands() {
-        const commandsPath = path.join(__dirname, '../commands');
-        const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-        for (const file of commandFiles) {
-            try {
-                const filePath = path.join(commandsPath, file);
-                const command = require(filePath);
-
-                // Set command in collection
-                if ('data' in command && 'execute' in command) {
-                    this.client.commands.set(command.data.name, command);
-                    this.commandsArray.push(command.data.toJSON());
-                    console.log(`Loaded command: ${command.data.name}`);
-                } else {
-                    console.log(`[WARNING] The command at ${filePath} is missing required "data" or "execute" property.`);
-                }
-            } catch (error) {
-                console.error(`Error loading command ${file}:`, error);
-            }
+module.exports = {
+    name: config.WHITELIST.COMMAND,
+    async execute(message) {
+        console.log(`Whitelist command executed by: ${message.author.tag}`);
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            console.log(`User ${message.author.tag} lacks permission.`);
+            return message.reply('❌ You do not have permission to use this command.');
         }
-
-        // Register commands with Discord
-        try {
-            const rest = new REST().setToken(process.env.TOKEN);
-            console.log('Started refreshing application (/) commands.');
-
-            await rest.put(
-                Routes.applicationCommands(process.env.CLIENT_ID),
-                { body: this.commandsArray },
-            );
-
-            console.log('Successfully reloaded application (/) commands.');
-        } catch (error) {
-            console.error('Error registering commands:', error);
-        }
-    }
-
-    async handleCommand(interaction) {
-        if (!interaction.isChatInputCommand()) return;
-
-        const command = this.client.commands.get(interaction.commandName);
-        if (!command) return;
 
         try {
-            await command.execute(interaction);
+            await message.delete();
+            console.log('Whitelist setup message sent.');
+            const whitelistEmbed = new EmbedBuilder()
+                .setTitle('🔒 Whitelist Application')
+                .setDescription('Welcome to our whitelist application process!\nClick the button below to begin.\n\n' +
+                              '**Requirements:**\n' +
+                              '• Answer all questions correctly\n' +
+                              '• Follow server rules\n' +
+                              '• Be patient during the process')
+                .setColor(config.WHITELIST.COLOR)
+                .setImage("https://i.ibb.co/TBpgPSZ/background.png")
+                .setTimestamp()
+                .setFooter({ text: 'Powered by DBR' });
+
+            const whitelistButton = new ButtonBuilder()
+                .setCustomId('whitelist_button')
+                .setLabel('Apply for Whitelist')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('📝');
+
+            const row = new ActionRowBuilder().addComponents(whitelistButton);
+
+            await message.channel.send({
+                embeds: [whitelistEmbed],
+                components: [row]
+            });
         } catch (error) {
-            console.error('Error executing command:', error);
-            const errorMessage = 'There was an error while executing this command!';
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: errorMessage, flags: 64 });
-            } else {
-                await interaction.reply({ content: errorMessage, flags: 64 });
-            }
+            console.error('Error setting up whitelist:', error);
+            await message.channel.send('❌ Failed to set up the whitelist system.');
         }
+    },
+
+    async handleButton(interaction) {
+        console.log(`Button interaction received: ${interaction.customId}`);
+        try {
+            userProgress.set(interaction.user.id, { questionIndex: 0, correctAnswers: 0 });
+            await sendQuestion(interaction, 0);
+        } catch (error) {
+            console.error('Error handling whitelist button:', error);
+            await interaction.reply({ content: '❌ An error occurred', flags: 64 });
+        }
+    },
+
+    async handleSelectMenu(interaction) {
+        console.log(`Select menu interaction received: ${interaction.customId}`);
+        const progress = userProgress.get(interaction.user.id);
+        if (!progress) return;
+
+        const currentQuestion = questions[progress.questionIndex];
+        const selectedAnswer = interaction.values[0];
+
+        console.log(`User ${interaction.user.tag} answered: ${selectedAnswer}`);
+
+        if (selectedAnswer === currentQuestion.correct) {
+            console.log('Answer is correct.');
+            progress.correctAnswers++;
+        } else {
+            console.log('Answer is incorrect.');
+        }
+
+        progress.questionIndex++;
+
+        if (progress.questionIndex < questions.length) {
+            await sendQuestion(interaction, progress.questionIndex);
+        } else {
+            await handleCompletion(interaction, progress.correctAnswers);
+            userProgress.delete(interaction.user.id);
+        }
+    }
+};
+
+async function sendQuestion(interaction, index) {
+    console.log(`Sending question ${index + 1}/${questions.length} to ${interaction.user.tag}`);
+    const question = questions[index];
+    
+    const embed = new EmbedBuilder()
+        .setTitle('Whitelist Question')
+        .setDescription(question.text)
+        .setColor(config.WHITELIST.COLOR)
+        .setFooter({ text: `Question ${index + 1}/${questions.length}` });
+
+    const select = new StringSelectMenuBuilder()
+        .setCustomId(`whitelist_answer_${index}`)
+        .setPlaceholder('Select your answer')
+        .addOptions(question.options);
+
+    const row = new ActionRowBuilder().addComponents(select);
+
+    if (index === 0) {
+        await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+    } else {
+        await interaction.update({ embeds: [embed], components: [row] });
     }
 }
 
-module.exports = CommandHandler;
+async function handleCompletion(interaction, correctAnswers) {
+    console.log(`User ${interaction.user.tag} completed whitelist with ${correctAnswers}/${questions.length} correct answers.`);
+    const passed = correctAnswers === questions.length;
+    const roleId = config.WHITELIST.ROLE_ID;
+
+    if (!roleId) {
+        console.error('Whitelist role ID is not defined in config.');
+        return;
+    }
+
+    await updateWhitelistStatus(interaction.user.id, passed ? 'approved' : 'rejected');
+
+    const embed = new EmbedBuilder()
+        .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
+        .setDescription(passed ? 'Congratulations! You have been whitelisted.' : `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
+        .setColor(passed ? 0x00FF00 : 0xFF0000);
+
+    if (passed) {
+        console.log(`Assigning role ${roleId} to ${interaction.user.tag}`);
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (!role) {
+            console.error('Whitelist role not found');
+            return;
+        }
+        await interaction.member.roles.add(role);
+    }
+
+    await interaction.update({ embeds: [embed], components: [] });
+}
+
+// Prefix Command Handler
+module.exports.prefixHandler = async (client, message) => {
+    const prefix = '!';
+    if (!message.content.startsWith(prefix) || message.author.bot) return;
+
+    const args = message.content.slice(prefix.length).trim().split(/\s+/);
+    const commandName = args.shift().toLowerCase();
+
+    if (commandName === config.WHITELIST.COMMAND.replace('!', '')) {
+        await module.exports.execute(message);
+    }
+};

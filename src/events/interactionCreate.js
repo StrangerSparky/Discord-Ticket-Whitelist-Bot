@@ -1,5 +1,8 @@
 const { Events } = require('discord.js');
-const { handleSayModal } = require('../handlers/ModalHandler'); 
+const OpenTicket = require('../ticket/OpenSystem');
+const CloseTicket = require('../ticket/CloseSystem');
+const { handleSayModal } = require('../handlers/ModalHandler');
+const whitelistModule = require('../features/whitelist');
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -8,7 +11,6 @@ module.exports = {
             if (interaction.isChatInputCommand()) {
                 const command = interaction.client.commands.get(interaction.commandName);
                 if (!command) return;
-
                 try {
                     await command.execute(interaction);
                 } catch (error) {
@@ -19,29 +21,44 @@ module.exports = {
             }
 
             if (interaction.isButton()) {
-                if (interaction.customId === 'whitelist_button') {
-                    const whitelistModule = require('../features/whitelist');
+                if (interaction.customId === 'ticket') {
+                    await OpenTicket.handleTicketOpen(interaction);
+                } else if (interaction.customId === 'close') {
+                    await CloseTicket.handleCloseRequest(interaction);
+                } else if (interaction.customId === 'yes') {
+                    await CloseTicket.handleConfirmClose(interaction, interaction.client);
+                } else if (interaction.customId === 'no') {
+                    await interaction.update({ content: 'Ticket closure cancelled.', components: [], flags: 64 });
+                } else if (interaction.customId === 'whitelist_button') {
                     await whitelistModule.handleButton(interaction);
                 }
                 return;
             }
 
-            if (interaction.isStringSelectMenu() && interaction.customId.startsWith('whitelist_answer_')) {
-                const whitelistModule = require('../features/whitelist');
-                await whitelistModule.handleSelectMenu(interaction);
+            if (interaction.isModalSubmit()) {
+                if (interaction.customId.startsWith('ticket_reason-')) {
+                    await OpenTicket.handleTicketCreate(interaction);
+                } else if (interaction.customId === 'ticket_close_reason_modal') {
+                    await CloseTicket.handleCloseReasonSubmit(interaction);
+                } else if (interaction.customId.startsWith('sayModal-')) {
+                    await handleSayModal(interaction);
+                }
                 return;
             }
 
-            if (interaction.isModalSubmit() && interaction.customId.startsWith('sayModal-')) {
-                await handleSayModal(interaction);
+            if (interaction.isStringSelectMenu()) {
+                if (interaction.customId === 'ticket_category') {
+                    await OpenTicket.handleCategorySelect(interaction);
+                } else if (interaction.customId.startsWith('whitelist_answer_')) {
+                    await whitelistModule.handleSelectMenu(interaction);
+                }
                 return;
             }
 
             console.warn(`⚠️ Unhandled interaction type: ${interaction.type}`);
-
         } catch (error) {
             console.error('❌ Error handling interaction:', error);
-            if (!interaction.replied) {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: '❌ An error occurred while processing your interaction.', flags: 64 });
             }
         }

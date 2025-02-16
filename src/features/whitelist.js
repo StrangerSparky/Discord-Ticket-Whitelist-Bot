@@ -3,52 +3,28 @@ const {
     ButtonBuilder, 
     ButtonStyle, 
     ActionRowBuilder,
-    PermissionFlagsBits,
     StringSelectMenuBuilder,
+    PermissionFlagsBits
 } = require('discord.js');
-const { saveUserDetails, getUserDetails, updateWhitelistStatus } = require('../database'); // Ensure this is imported
+const { saveUserDetails, getUserDetails, updateWhitelistStatus } = require('../database');
+const config = require('../../config');
 const moment = require('moment');
 
-
-const questions = [
-    {
-        text: "📜 **Do You Have Read All The Rules?**",
-        options: [
-            { label: "❌ No", value: "wrong1" },
-            { label: "✅ Yes", value: "correct1" }
-        ],
-        correct: "correct1"
-    },
-    {
-        text: "🚫 **Is Vulgar Language Allowed In The Server?**",
-        options: [
-            { label: "❌ No", description: "Treat everyone with respect", value: "correct2" },
-            { label: "💬 Yes", description: "Uses vulgar language", value: "wrong2" }
-        ],
-        correct: "correct2"
-    },
-    {
-        text: "👊 **If Someone Calls You Vulgar Words, What Should You Do?**",
-        options: [
-            { label: "📷 Record POV/Contact Admin", description: "Contact Admin", value: "correct3" },
-            { label: "🗣️ Start Arguing", description: "Respond back with vulgar language", value: "wrong3" }
-        ],
-        correct: "correct3"
-    }
-];
-
+const questions = config.WHITELIST.QUESTIONS;
 const userProgress = new Map();
 
 module.exports = {
-    name: '!whitelist',
-    questions,
+    name: config.WHITELIST.COMMAND,
     async execute(message) {
+        console.log(`Whitelist command executed by: ${message.author.tag}`);
         if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            console.log(`User ${message.author.tag} lacks permission.`);
             return message.reply('❌ You do not have permission to use this command.');
         }
 
         try {
             await message.delete();
+            console.log('Whitelist setup message sent.');
             const whitelistEmbed = new EmbedBuilder()
                 .setTitle('🔒 Whitelist Application')
                 .setDescription('Welcome to our whitelist application process!\nClick the button below to begin.\n\n' +
@@ -56,7 +32,7 @@ module.exports = {
                               '• Answer all questions correctly\n' +
                               '• Follow server rules\n' +
                               '• Be patient during the process')
-                .setColor(0xF228FE)
+                .setColor(config.WHITELIST.COLOR)
                 .setImage("https://i.ibb.co/TBpgPSZ/background.png")
                 .setTimestamp()
                 .setFooter({ text: 'Powered by DBR' });
@@ -67,8 +43,7 @@ module.exports = {
                 .setStyle(ButtonStyle.Primary)
                 .setEmoji('📝');
 
-            const row = new ActionRowBuilder()
-                .addComponents(whitelistButton);
+            const row = new ActionRowBuilder().addComponents(whitelistButton);
 
             await message.channel.send({
                 embeds: [whitelistEmbed],
@@ -81,6 +56,7 @@ module.exports = {
     },
 
     async handleButton(interaction) {
+        console.log(`Button interaction received: ${interaction.customId}`);
         try {
             userProgress.set(interaction.user.id, { questionIndex: 0, correctAnswers: 0 });
             await sendQuestion(interaction, 0);
@@ -91,14 +67,20 @@ module.exports = {
     },
 
     async handleSelectMenu(interaction) {
+        console.log(`Select menu interaction received: ${interaction.customId}`);
         const progress = userProgress.get(interaction.user.id);
         if (!progress) return;
 
         const currentQuestion = questions[progress.questionIndex];
         const selectedAnswer = interaction.values[0];
 
+        console.log(`User ${interaction.user.tag} answered: ${selectedAnswer}`);
+
         if (selectedAnswer === currentQuestion.correct) {
+            console.log('Answer is correct.');
             progress.correctAnswers++;
+        } else {
+            console.log('Answer is incorrect.');
         }
 
         progress.questionIndex++;
@@ -109,16 +91,30 @@ module.exports = {
             await handleCompletion(interaction, progress.correctAnswers);
             userProgress.delete(interaction.user.id);
         }
+    },
+
+    // Prefix Command Handler
+    prefixHandler: async (client, message) => {
+        const prefix = '!';
+        if (!message.content.startsWith(prefix) || message.author.bot) return;
+
+        const args = message.content.slice(prefix.length).trim().split(/\s+/);
+        const commandName = args.shift().toLowerCase();
+
+        if (commandName === config.WHITELIST.COMMAND.replace('!', '')) {
+            await module.exports.execute(message);
+        }
     }
 };
 
 async function sendQuestion(interaction, index) {
+    console.log(`Sending question ${index + 1}/${questions.length} to ${interaction.user.tag}`);
     const question = questions[index];
     
     const embed = new EmbedBuilder()
         .setTitle('Whitelist Question')
         .setDescription(question.text)
-        .setColor(0xF228FE)
+        .setColor(config.WHITELIST.COLOR)
         .setFooter({ text: `Question ${index + 1}/${questions.length}` });
 
     const select = new StringSelectMenuBuilder()
@@ -136,98 +132,31 @@ async function sendQuestion(interaction, index) {
 }
 
 async function handleCompletion(interaction, correctAnswers) {
+    console.log(`User ${interaction.user.tag} completed whitelist with ${correctAnswers}/${questions.length} correct answers.`);
     const passed = correctAnswers === questions.length;
-    const roleId = process.env.WHITELIST_ROLE_ID;
+    const roleId = config.WHITELIST.ROLE_ID;
 
-    try {
-        // Get user details from database
-        const userDetails = await getUserDetails(interaction.user.id);
-        if (!userDetails) {
-            console.error('User details not found in database');
+    if (!roleId) {
+        console.error('Whitelist role ID is not defined in config.');
+        return;
+    }
+
+    await updateWhitelistStatus(interaction.user.id, passed ? 'approved' : 'rejected');
+
+    const embed = new EmbedBuilder()
+        .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
+        .setDescription(passed ? 'Congratulations! You have been whitelisted.' : `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
+        .setColor(passed ? 0x00FF00 : 0xFF0000);
+
+    if (passed) {
+        console.log(`Assigning role ${roleId} to ${interaction.user.tag}`);
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (!role) {
+            console.error('Whitelist role not found');
             return;
         }
-
-        // Update whitelist status
-        await updateWhitelistStatus(interaction.user.id, passed ? 'approved' : 'rejected');
-
-        const embed = new EmbedBuilder()
-            .setTitle(passed ? '✅ Whitelist Application Successful' : '❌ Whitelist Application Failed')
-            .setDescription(passed ? 
-                'Congratulations! You have been whitelisted.' : 
-                `You answered ${correctAnswers}/${questions.length} questions correctly. Please try again.`)
-            .setColor(passed ? 0x00FF00 : 0xFF0000);
-
-        if (passed && roleId) {
-            const role = interaction.guild.roles.cache.get(roleId);
-            if (!role) {
-                console.error('Whitelist role not found');
-                return;
-            }
-
-            await interaction.member.roles.add(role);
-
-            // Log to channel
-            const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
-            if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                .setTitle('Whitelist Approved')
-                .setDescription([
-                  `**👤 User Information:**`,
-                  `**Username:** ${userDetails.username}`,
-                  `**Discord ID:** ${userDetails.id}`,
-                  `**Email:** ${userDetails.email || 'Not provided'}`,
-                  ``,
-                  `**✅ Verification Details:**`,
-                  `**Verified At:** ${moment(userDetails.verifiedAt).format('MMMM D, YYYY h:mm A')}`,
-                  `**Whitelist Status:** Approved`,
-                  ``,
-                  `✅ **Result:** User has been whitelisted`
-                ].join('\n'))
-                .setColor(0x00FF00)
-                .setTimestamp();
-              
-              if (userDetails.avatar) {
-                logEmbed.setThumbnail(`https://cdn.discordapp.com/avatars/${userDetails.id}/${userDetails.avatar}.png`);
-              }
-                await logChannel.send({ embeds: [logEmbed] });
-            }
-
-            // Send DM to user
-            const dmEmbed = new EmbedBuilder()
-                .setTitle('🎉 Whitelist Application Successful!')
-                .setDescription([
-                    `Congratulations ${interaction.user.toString()}!`,
-                    '',
-                    '**You have successfully completed the whitelist application!**',
-                    'You now have access to the whitelisted sections of our server.',
-                    '',
-                    '**Next Steps:**',
-                    '• Check out the whitelisted channels',
-                    '• Read any additional rules or guidelines',
-                    '• Enjoy your new access!'
-                ].join('\n'))
-                .setColor(0x00FF00)
-                .setTimestamp()
-                .setFooter({ text: 'Powered by DBR' });
-
-            try {
-                await interaction.user.send({ embeds: [dmEmbed] });
-            } catch (error) {
-                console.error('Could not send DM to user:', error);
-                embed.setFooter({ text: 'Note: Unable to send you a DM. Please check your privacy settings.' });
-            }
-        }
-
-        await interaction.update({ embeds: [embed], components: [] });
-    } catch (error) {
-        console.error('Error in handleCompletion:', error);
-        await interaction.update({ 
-            embeds: [new EmbedBuilder()
-                .setTitle('❌ Error')
-                .setDescription('An error occurred while processing your whitelist application. Please contact an administrator.')
-                .setColor(0xFF0000)
-            ], 
-            components: [] 
-        });
+        await interaction.member.roles.add(role);
     }
-} 
+
+    await interaction.update({ embeds: [embed], components: [] });
+}

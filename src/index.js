@@ -36,13 +36,12 @@ for (const file of commandFiles) {
     }
 }
 
-// Centralized event loading with deduplication
+// Load event handlers
 const loadEvents = (client) => {
     const eventsPath = path.join(__dirname, 'events');
     const handlersPath = path.join(__dirname, 'handlers');
     const loadedEvents = new Set();
 
-    // Load events from events folder
     const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
     for (const file of eventFiles) {
         const filePath = path.join(eventsPath, file);
@@ -58,7 +57,6 @@ const loadEvents = (client) => {
         }
     }
 
-    // Load handlers from handlers folder
     const handlerFiles = fs.readdirSync(handlersPath).filter(file => file.endsWith('.js'));
     for (const file of handlerFiles) {
         const filePath = path.join(handlersPath, file);
@@ -71,17 +69,18 @@ const loadEvents = (client) => {
     }
 };
 
-// Load events
 loadEvents(client);
 
-
-// Initialize OAuth and other features
 require('./oauth/server.js');
 require('../server.js');
 require('./database.js');
 require('./features/welcome')(client);
 require('./features/vcping')(client);
 require('./features/verify');
-require('./features/whitelist.js');
+const whitelist = require('./features/whitelist.js');
+
+client.on('messageCreate', async (message) => {
+    await whitelist.prefixHandler(client, message);
+});
 
 client.login(process.env.TOKEN);

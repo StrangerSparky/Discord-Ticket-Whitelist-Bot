@@ -1,21 +1,21 @@
 module.exports = {
     WHITELIST: {
-        ROLE_NAME: 'DBR WHITELISTED',  // The role name for whitelisted users
-        ROLE_ID: process.env.whitelistRoleId,  // Replace with the actual role ID or use environment variable
-        COMMAND: '!setupwhitelist',  // The command to start the whitelist process
-        COOLDOWN: 60,  // Cooldown period in seconds
-        COLOR: '#9400D3',  // Color for embeds
+        ROLE_NAME: 'DBR WHITELISTED',
+        ROLE_ID: process.env.WHITELIST_ROLE_ID,
+        COMMAND: '!whitelist',
+        COOLDOWN: 60,
+        COLOR: '#9400D3',
         QUESTIONS: [
             {
-                text: "📜 **Do You Have Read All The Rules?**",  // Added emoji to question text
+                text: "📜 **Have you read all the rules?**",
                 options: [
-                    { label: "❌ No", value: "wrong1" },  // Added emoji to options
+                    { label: "❌ No", value: "wrong1" },
                     { label: "✅ Yes", value: "correct1" }
                 ],
                 correct: "correct1"
             },
             {
-                text: "🚫 **Is Vulgar Language Allowed In The Server?**",  // Added emoji to question text
+                text: "🚫 **Is vulgar language allowed in the server?**",
                 options: [
                     { label: "❌ No", description: "Treat everyone with respect", value: "correct2" },
                     { label: "💬 Yes", description: "Uses vulgar language", value: "wrong2" }
@@ -23,10 +23,10 @@ module.exports = {
                 correct: "correct2"
             },
             {
-                text: "👊 **If Someone Calls You Vulgar Words, What Should You Do?**",  // Added emoji to question text
+                text: "👊 **If someone insults you, what should you do?**",
                 options: [
-                    { label: "📷 Record POV/Contact Admin", description: "Contact Admin", value: "correct3" },
-                    { label: "🗣️ Start Arguing", description: "Respond back with vulgar language", value: "wrong3" }
+                    { label: "📷 Record POV/Contact Admin", description: "Report to staff", value: "correct3" },
+                    { label: "🗣️ Start arguing", description: "Respond back with vulgar language", value: "wrong3" }
                 ],
                 correct: "correct3"
             }
